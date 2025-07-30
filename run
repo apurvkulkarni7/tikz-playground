@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+set -o pipefail
+
+#Change to the script directory
+cd "$(dirname ${BASH_SOURCE[0]})"
+
+if [ "$1" == "--build-docker" ]; then
+    if [ ! -f "Dockerfile" ]; then
+        echo "Dockerfile doesn't exist at $PWD"
+        exit 1
+    fi
+    if ! which docker > /dev/null; then
+        echo "Docker is not installed on the machine."
+        echo "For more info, visit https://docs.docker.com/engine/install/"
+        exit 1
+    fi
+    docker build --build-arg year=$(date +%Y) -t tikz_playground .
+    exit 0
+fi
+
+if [ "$1" == "--setup-local" ]; then
+    if ! which -v pdflatex &> /dev/null; then
+        echo "Texlive isntallation not found."
+        read -p "Do you want to install it? (Y/n): " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            TEXLIVE_INSTALL_DIR="$$HOME/.texlive"
+            TEXLIVE_INSTALL_MIRROR="http://mirror.ctan.org"
+            rm -rf /tmp/install-tl-*
+	        sudo apt-get -y update && sudo apt-get install -y wget perl poppler-utils inotify-tools libfontconfig1 fontconfig
+	        wget -P /tmp/ ${TEXLIVE_INSTALL_MIRROR}/systems/texlive/tlnet/install-tl-unx.tar.gz
+	        cd /tmp && tar -xvf install-tl-unx.tar.gz
+	        cd /tmp/install-tl-20* && \
+		    perl install-tl --no-interaction --no-doc-install --no-src-install --scheme=basic --texdir="${TEXLIVE_INSTALL_DIR}"
+	        echo 'export PATH="$${PATH}:${TEXLIVE_INSTALL_DIR}/bin/x86_64-linux"' > ${TEXLIVE_INSTALL_DIR}/.env
+	        echo 'export MANPATH="${TEXLIVE_INSTALL_DIR}/texmf-dist/doc/man"' >> ${TEXLIVE_INSTALL_DIR}/.env
+	        echo 'export INFOPATH="${TEXLIVE_INSTALL_DIR}/texmf-dist/doc/info"' >> ${TEXLIVE_INSTALL_DIR}/.env
+	        grep -q "# Texlive installtion" "$${HOME}/.${MYSHELL}rc" || echo  "# Texlive installtion" >> "$${HOME}/.${MYSHELL}rc"
+	        grep -q ". \"${TEXLIVE_INSTALL_DIR}/.env\"" "$${HOME}/.${MYSHELL}rc" || echo  ". \"${TEXLIVE_INSTALL_DIR}/.env\"" >> "$${HOME}/.${MYSHELL}rc"
+	        PATH="$${PATH}:${TEXLIVE_INSTALL_DIR}/bin/x86_64-linux" && \
+		    tlmgr update --self && \
+            tlmgr install standalone pgf pgfplots etoolbox && \
+		    export OSFONTDIR=/usr/share/fonts && chmod -R o+w "${TEXLIVE_INSTALL_DIR}/texmf-var" && fc-cache --really-force --verbose && \
+		    tlmgr update --self --all && \
+            sudo apt-get autoremove && sudo apt-get autoclean && \
+		    rm -r /tmp/install-tl-* && \
+		    tlmgr --version
+	        echo "Installation complete."            
+        fi
+    fi
+fi
+
+if [ "$1" == "--docker" ]; then
+    echo "Starting docker application"
+    docker compose up app
+elif [ "$#" == "0" ]; then
+    if [ ! -f "venv/bin/activate" ]; then
+        echo "Python virutal env doesn't exist. Creating"
+        
+        if python -m venv --help > /dev/null 2>&1; then
+            echo "python -m venv is available"
+        else
+            echo "python -m venv is NOT available"
+            echo "Install it using:"
+            echo " Linux - sudo apt install python3-venv"
+            echo " MacOS - brew install python"
+        fi        
+        python -m venv venv
+    fi
+    if [ "$VIRTUAL_ENV" == "" ]; then
+        source venv/bin/activate
+    fi
+    pip install gradio==5.38.2 > /dev/null
+    gradio app.py
+else
+    echo "incorrect input"
+    exit 1
+fi

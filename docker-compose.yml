@@ -1,0 +1,8 @@
+services:
+  app:
+    image: tikz_playground:latest
+    ports:
+      - "7860:7860"
+    environment:
+      DISPLAY: $DISPLAY
+      HOST_IP: host.docker.internal
